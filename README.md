@@ -1,7 +1,5 @@
 # N-Gram Chatbot
 
-![Chatbot Banner](https://example.com/banner.png) *(Replace with your own banner image URL)*
-
 ## Table of Contents
 
 - [Overview](#overview)
@@ -21,7 +19,7 @@
 
 ## Overview
 
-The **N-Gram Chatbot** is a simple yet effective conversational agent built using Python's n-gram modeling approach. Leveraging SQLite for efficient data storage and retrieval, this chatbot can engage in basic conversations by predicting the next word based on preceding word sequences. It's a great project for those interested in natural language processing (NLP) and understanding the fundamentals of language models.
+The **N-Gram Chatbot** is a simple conversational agent built using Python's n-gram modeling approach. Leveraging SQLite for efficient data storage and retrieval, this chatbot can engage in basic conversations by predicting the next word based on preceding word sequences. It's a project for those interested in natural language processing (NLP) and understanding the fundamentals of language models.
 
 ## Features
 
