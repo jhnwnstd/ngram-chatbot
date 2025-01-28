@@ -13,13 +13,12 @@ from urllib.parse import urljoin
 import time
 import sqlite3
 import logging
-from functools import lru_cache
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Ensure all necessary NLTK data packages are downloaded
-nltk.download(['punkt', 'stopwords', 'wordnet'])
+nltk.download(['punkt', 'stopwords', 'wordnet', 'omw-1.4'])
 
 # Personality components
 GREETINGS = ["Hi there!", "Hello!", "Hey!", "Greetings!"]
@@ -117,8 +116,8 @@ def generate_ngrams(tokens, n):
     """Generate n-grams from tokens."""
     return ngrams(tokens, n)
 
-def build_ngram_model(text, n, top_k=10000):
-    """Build an n-gram model without Add-One smoothing using SQLite for storage."""
+def build_ngram_model(text, n, top_k=15000):
+    """Build an n-gram model using SQLite for storage."""
     logging.info("Connecting to SQLite database...")
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -195,21 +194,14 @@ def build_ngram_model(text, n, top_k=10000):
 
     logging.info(f"Total n-grams processed: {total_ngrams}")
 
-@lru_cache(maxsize=100000)
-def get_next_words(prefix):
-    """Fetch next words and counts for a given prefix from the database with caching."""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute('SELECT next_word, count FROM ngrams WHERE prefix = ?', (prefix,))
-    results = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return results
-
-def prefix_exists(prefix, cursor):
+def prefix_exists(cursor, prefix):
     """Check if a prefix exists in the ngram database."""
-    cursor.execute('SELECT 1 FROM ngrams WHERE prefix = ? LIMIT 1', (prefix,))
-    return cursor.fetchone() is not None
+    try:
+        cursor.execute('SELECT 1 FROM ngrams WHERE prefix = ? LIMIT 1', (prefix,))
+        return cursor.fetchone() is not None
+    except sqlite3.Error as e:
+        logging.error(f"Database error in prefix_exists: {e}")
+        return False
 
 def generate_response(ngram_model_conn, seed, n, 
                      max_words=25, temperature=0.75, 
@@ -244,7 +236,7 @@ def generate_response(ngram_model_conn, seed, n,
         temp_fallback_n = n
         temp_prefix = prefix
         
-        while not prefix_exists(temp_prefix, cursor) and temp_fallback_n > 1:
+        while not prefix_exists(cursor, temp_prefix) and temp_fallback_n > 1:
             temp_fallback_n -= 1
             temp_prefix_length = temp_fallback_n - 1
             if len(response) >= temp_prefix_length:
@@ -254,11 +246,16 @@ def generate_response(ngram_model_conn, seed, n,
             temp_prefix = ' '.join(temp_prefix_tokens)
             current_temp += 0.1  # Increase creativity
         
-        if not prefix_exists(temp_prefix, cursor):
+        if not prefix_exists(cursor, temp_prefix):
             break  # Unable to find a suitable prefix
         
-        # Fetch next words and counts using cached function
-        results = get_next_words(temp_prefix)
+        # Fetch next words and counts using the existing cursor
+        try:
+            cursor.execute('SELECT next_word, count FROM ngrams WHERE prefix = ?', (temp_prefix,))
+            results = cursor.fetchall()
+        except sqlite3.Error as e:
+            logging.error(f"Database error in generate_response: {e}")
+            break
         
         if not results:
             break  # No available next words
@@ -436,18 +433,14 @@ def main():
             sys.exit(1)
     
     # Build n-gram model
-    n = 4  # Tetragrams
-    top_k = 15000  # Increased vocabulary size
+    n = 5  # Tetragrams
+    top_k = 25000  # Increased vocabulary size
     logging.info("Building n-gram model. This may take a while...")
     build_ngram_model(training_text, n, top_k=top_k)
     logging.info("n-gram model built successfully.")
     
     # Connect to SQLite database for querying
     conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    
-    # Close the cursor as it's no longer needed
-    cursor.close()
     
     # Chat interface
     print("\nChatbot is ready! Let's chat (type 'exit' to quit):")
@@ -458,14 +451,14 @@ def main():
             print(f"{random.choice(FAREWELLS)} {random.choice(EMOJIS)}")
             break
         
-        # Generate chatbot response without `conversation_history`
+        # Generate chatbot response
         response = generate_response(
             ngram_model_conn=conn, 
             seed=user_input, 
             n=n, 
             temperature=random.uniform(0.6, 0.9),
             max_words=random.randint(15, 25),
-            max_repeats=2  # Adjust as needed
+            max_repeats=2
         )
         
         # Simulate typing animation
