@@ -30,58 +30,12 @@ logging.basicConfig(
 # Ensure all necessary NLTK data packages are downloaded
 nltk.download(['punkt', 'stopwords', 'wordnet', 'omw-1.4'])
 
-# Personality components
-class PersonalityEngine:
-    """Enhanced personality management for more natural responses"""
-    
-    GREETINGS = [
-        "Hi there!", "Hello!", "Hey!", "Greetings!", 
-        "Good to see you!", "Nice to meet you!", "Hi!"
-    ]
-    FAREWELLS = [
-        "Goodbye!", "See you later!", "Farewell!", "Bye!", 
-        "Take care!", "Until next time!", "Catch you later!"
-    ]
-    EMOJIS = ["😊", "🤔", "😄", "🙂", "👋", "✨", "💭"]
-    HEDGES = [
-        "Well... ", "Hmm... ", "You know... ", "I think... ",
-        "Let me see... ", "It seems... ", "Perhaps... "
-    ]
-    FALLBACK_RESPONSES = [
-        "I'm not sure I understand. Could you tell me more?",
-        "Interesting! Can you elaborate on that?",
-        "That's intriguing. Could you explain further?",
-        "I'd love to hear more about that.",
-        "Could you rephrase that for me?"
-    ]
-    
-    @classmethod
-    def get_response_enhancement(cls, response_type: str) -> str:
-        """Get a random enhancement of specified type with weighted probabilities"""
-        if response_type == "greeting":
-            return random.choices(
-                cls.GREETINGS, 
-                weights=[0.3, 0.2, 0.2, 0.1, 0.1, 0.05, 0.05]
-            )[0]
-        elif response_type == "farewell":
-            return random.choices(
-                cls.FAREWELLS, 
-                weights=[0.3, 0.2, 0.2, 0.1, 0.1, 0.05, 0.05]
-            )[0]
-        elif response_type == "emoji":
-            return random.choice(cls.EMOJIS)
-        elif response_type == "hedges":
-            return random.choice(cls.HEDGES)
-        elif response_type == "fallback":
-            return random.choice(cls.FALLBACK_RESPONSES)
-        return ""
-
 # Configuration using dataclass
 @dataclass
 class ChatbotConfig:
     n: int = 5
-    vocab_size: int = 25000
-    max_words: int = 25
+    vocab_size: int = 50000  # Increased vocabulary size to reduce <unk> occurrences
+    max_words: int = 30  # Increased from 25 for longer responses
     temperature: float = 0.75
     max_repeats: int = 2
     batch_size: int = 100000
@@ -93,6 +47,187 @@ class ChatbotConfig:
     hedge_probability: float = 0.3
     emoji_probability: float = 0.2
 
+# Personality components
+class PersonalityEngine:
+    """Advanced personality management with context awareness and intent recognition"""
+    
+    # Intent patterns for recognition (removed 'fallback' intent)
+    INTENT_PATTERNS = {
+        'greeting': r'\b(hi|hello|hey|greetings|good\s*(morning|afternoon|evening)|howdy)\b',
+        'farewell': r'\b(goodbye|bye|see\s*you|farewell|good\s*night)\b',
+        'how_are_you': r'\b(how\s*are\s*you|how\s*you\s*doing|how\'?s\s*it\s*going|what\'?s\s*up)\b',
+        'thanks': r'\b(thanks|thank\s*you|appreciate|grateful)\b',
+        'opinion': r'\b(what\s*(do|should|would)\s*(you|u)\s*(think|feel|believe)|your\s*thoughts)\b',
+        'help': r'\b(help|assist|guide|explain|clarify)\b',
+        'agreement': r'\b(yes|yeah|sure|okay|alright|correct|right)\b',
+        'disagreement': r'\b(no|nope|nah|disagree|incorrect|wrong)\b',
+        'hedges': r'\b(perhaps|maybe|I think|it seems|I believe)\b'
+    }
+    
+    # Response templates with context tags
+    RESPONSES = {
+        'greeting': [
+            ("Hi there! How can I help you today?", 'formal'),
+            ("Hey! Great to chat with you!", 'casual'),
+            ("Hello! I'm ready to assist you.", 'formal'),
+            ("Hi! What's on your mind?", 'casual'),
+            ("Greetings! How may I help?", 'formal')
+        ],
+        'farewell': [
+            ("Goodbye! Thanks for chatting!", 'casual'),
+            ("Take care! Have a great day!", 'casual'),
+            ("Farewell! It was nice talking with you.", 'formal'),
+            ("See you later! Feel free to return anytime!", 'casual'),
+            ("Goodbye! Looking forward to our next conversation.", 'formal')
+        ],
+        'how_are_you': [
+            ("I'm doing well, thanks for asking! How about you?", 'casual'),
+            ("I'm great! How's your day going?", 'casual'),
+            ("Thanks for asking! I'm here and ready to help. How are you?", 'formal'),
+            ("I'm functioning perfectly! How can I assist you today?", 'formal')
+        ],
+        'thanks': [
+            ("You're welcome! Happy to help!", 'casual'),
+            ("Glad I could assist!", 'casual'),
+            ("My pleasure! Is there anything else you'd like to know?", 'formal'),
+            ("You're most welcome! Don't hesitate to ask if you need more help.", 'formal')
+        ],
+        'opinion': [
+            ("Based on what we've discussed, I think...", 'thoughtful'),
+            ("From my perspective...", 'thoughtful'),
+            ("Here's what I believe about that...", 'thoughtful'),
+            ("Let me share my thoughts on this...", 'thoughtful')
+        ],
+        'help': [
+            ("I'll do my best to help. What exactly would you like to know?", 'formal'),
+            ("Sure thing! What do you need help with?", 'casual'),
+            ("I'd be happy to assist. Could you provide more details?", 'formal'),
+            ("Of course! Let me know what you're looking for.", 'casual')
+        ],
+        'hedges': [
+            ("Perhaps, ", 'thoughtful'),
+            ("Maybe, ", 'thoughtful'),
+            ("I think, ", 'casual'),
+            ("It seems, ", 'neutral')
+        ],
+        'default': [
+            ("I'm listening. Tell me more about that.", 'neutral'),
+            ("That's interesting! Could you elaborate?", 'neutral'),
+            ("I'd like to understand better. Could you explain further?", 'neutral'),
+            ("Tell me more about your thoughts on this.", 'neutral')
+        ]
+    }
+    
+    # Emotion indicators for response modification
+    EMOTIONS = {
+        'positive': ["😊", "😄", "👍", "✨"],
+        'neutral': ["🤔", "💭", "👋"],
+        'thoughtful': ["💡", "🤓", "✍️"]
+    }
+    
+    # Contextual modifiers
+    MODIFIERS = {
+        'formal': {
+            'hedges': ["I believe", "In my view", "It appears that", "Perhaps"],
+            'transitions': ["Furthermore", "Moreover", "Additionally", "However"]
+        },
+        'casual': {
+            'hedges': ["I think", "Seems like", "Maybe", "Probably"],
+            'transitions': ["Also", "Plus", "But", "Though"]
+        },
+        'thoughtful': {
+            'hedges': ["After consideration", "Upon reflection", "It seems to me", "One might say"],
+            'transitions': ["On the other hand", "Nevertheless", "Consequently", "Indeed"]
+        }
+    }
+
+    def __init__(self):
+        """Initialize personality with context tracking"""
+        self.conversation_history = []
+        self.current_tone = 'neutral'
+        self.formality_level = 'casual'
+        self.compile_patterns()
+
+    def compile_patterns(self):
+        """Compile regex patterns for faster matching"""
+        self.compiled_patterns = {
+            intent: re.compile(pattern, re.IGNORECASE)
+            for intent, pattern in self.INTENT_PATTERNS.items()
+        }
+
+    def detect_intent(self, user_input: str) -> str:
+        """Detect the user's intent from their input"""
+        for intent, pattern in self.compiled_patterns.items():
+            if pattern.search(user_input):
+                return intent
+        return 'default'
+
+    def get_response(self, user_input: str, context: dict = None) -> str:
+        """Generate a contextually appropriate response based on user input"""
+        intent = self.detect_intent(user_input)
+        self.update_conversation_context(user_input, intent)
+        
+        # Select appropriate response template
+        responses = self.RESPONSES.get(intent, self.RESPONSES['default'])
+        response, tone = random.choice(responses)
+        
+        # Add contextual modifications
+        response = self.add_contextual_elements(response, tone, intent)
+        
+        # Update conversation history
+        self.conversation_history.append({
+            'user_input': user_input,
+            'response': response,
+            'intent': intent,
+            'tone': tone
+        })
+        
+        return response
+
+    def get_intent_response(self, intent: str) -> Optional[str]:
+        """Retrieve a response based on a specific intent."""
+        responses = self.RESPONSES.get(intent, self.RESPONSES['default'])
+        if responses:
+            response, tone = random.choice(responses)
+            response = self.add_contextual_elements(response, tone, intent)
+            return response
+        return None
+
+    def add_contextual_elements(self, response: str, tone: str, intent: str) -> str:
+        """Add contextual elements to the response"""
+        # Add appropriate emotion indicator
+        if intent in ['greeting', 'thanks']:
+            emotion_type = 'positive'
+        elif intent in ['opinion', 'help', 'thoughtful']:
+            emotion_type = 'thoughtful'
+        else:
+            emotion_type = 'neutral'
+        emoji = random.choice(self.EMOTIONS[emotion_type])
+        
+        # Add contextual modifier if appropriate
+        if intent in ['opinion', 'help']:
+            modifier = random.choice(self.MODIFIERS[tone]['hedges'])
+            response = f"{modifier}, {response}"
+        
+        # Add emoji with reduced probability for formal tone
+        if tone != 'formal' or random.random() < 0.3:
+            response = f"{response} {emoji}"
+        
+        return response
+
+    def update_conversation_context(self, user_input: str, intent: str):
+        """Update conversation context based on user input and intent"""
+        # Adjust formality based on user's style
+        if re.search(r'\b(please|kindly|would you|could you)\b', user_input, re.IGNORECASE):
+            self.formality_level = 'formal'
+        elif re.search(r'\b(hey|hi|yeah|nah|cool|awesome)\b', user_input, re.IGNORECASE):
+            self.formality_level = 'casual'
+        
+        # Track conversation flow
+        if len(self.conversation_history) > 3:
+            self.conversation_history.pop(0)  # Keep only recent history
+
+# Text Preprocessing
 class TextPreprocessor:
     """Enhanced text preprocessing with caching and optimization"""
     
@@ -127,7 +262,7 @@ class TextPreprocessor:
             tokens = [token for token in tokens if token not in self.stop_words and len(token) > 1]
             
             if vocab is not None:
-                tokens = [token if token in vocab else '<UNK>' for token in tokens]
+                tokens = [token if token in vocab else '<unk>' for token in tokens]
             
             tokens = ['<s>'] + tokens + ['</s>']
             processed_sentences.append(tokens)
@@ -136,13 +271,16 @@ class TextPreprocessor:
         self.cache[cache_key] = result
         return result
 
+# N-Gram Model
 class NGramModel:
     """Enhanced N-gram model with optimized database operations"""
     
-    def __init__(self, config: ChatbotConfig):
+    def __init__(self, config: ChatbotConfig, personality: PersonalityEngine):
         self.config = config
         self.conn = None
         self.preprocessor = TextPreprocessor()
+        self.personality = personality  # Store the PersonalityEngine instance
+        self.vocab = set()  # Initialize vocabulary
         
     async def download_gutenberg_text(self, book_id: str) -> Optional[str]:
         """Asynchronously download text from Project Gutenberg"""
@@ -204,11 +342,11 @@ class NGramModel:
         # Count word frequencies and build vocabulary
         tokens = self.preprocessor.preprocess_text(text)
         word_freq = Counter(tokens)
-        vocab = {word for word, _ in word_freq.most_common(self.config.vocab_size)}
-        vocab.add('<UNK>')
+        self.vocab = {word for word, _ in word_freq.most_common(self.config.vocab_size)}
+        self.vocab.add('<unk>')
         
         # Re-process with vocabulary limitation
-        tokens = self.preprocessor.preprocess_text(text, vocab=vocab)
+        tokens = self.preprocessor.preprocess_text(text, vocab=self.vocab)
         
         # Generate and store n-grams with progress tracking
         ngram_generator = ngrams(tokens, self.config.n)
@@ -273,12 +411,15 @@ class NGramModel:
             str: The generated response.
         """
         if not seed.strip():
-            return f"{PersonalityEngine.get_response_enhancement('greeting')} {PersonalityEngine.get_response_enhancement('emoji')}"
+            greeting_response = self.personality.get_intent_response('greeting') or "Hello!"
+            emoji = random.choice(self.personality.EMOTIONS['neutral'])
+            return f"{greeting_response} {emoji}"
         
         # Preprocess the seed text
-        seed_tokens = self.preprocessor.preprocess_text(seed)
+        seed_tokens = self.preprocessor.preprocess_text(seed, vocab=self.vocab)
         if not seed_tokens:
-            return PersonalityEngine.get_response_enhancement('fallback')
+            generic_prompt = "Could you tell me more about that?"
+            return generic_prompt
         
         response = seed_tokens.copy()
         
@@ -330,7 +471,7 @@ class NGramModel:
             
             # Apply Add-One (Laplace) Smoothing to handle unseen words
             total_count = sum(counts)
-            vocab_size = self.config.vocab_size + 1  # Including <UNK>
+            vocab_size = self.config.vocab_size + 1  # Including <unk>
             smoothed_probabilities = [(count + 1) / (total_count + vocab_size) for count in counts]
             
             # Normalize the probabilities
@@ -365,13 +506,7 @@ class NGramModel:
                 
                 # Replace <unk> with a random word from the vocabulary to reduce incoherence
                 if next_word == '<unk>':
-                    # Option 1: Choose a random word from the known vocabulary
-                    # Assuming self.vocab is a set containing all known words
-                    if hasattr(self, 'vocab') and self.vocab:
-                        next_word = random.choice(list(self.vocab))
-                    else:
-                        # Fallback if vocab is not defined
-                        next_word = random.choice(filtered_choices)
+                    next_word = random.choice(list(self.vocab))
                 
                 # Prevent specific bigram repetitions
                 if len(response) >= 1:
@@ -422,7 +557,8 @@ class NGramModel:
         
         # Add hedging phrases to enhance personality
         if random.random() < self.config.hedge_probability:
-            text = f"{PersonalityEngine.get_response_enhancement('hedges')}{text.lower()}"
+            hedge = self.personality.get_intent_response('hedges') or "Perhaps, "
+            text = f"{hedge}{text.lower()}"
         
         # Correct spacing before punctuation
         text = re.sub(r'\s([?.!,](?:\s|$))', r'\1', text)
@@ -436,25 +572,37 @@ class NGramModel:
         
         # Append an emoji with a certain probability to add personality
         if random.random() < self.config.emoji_probability:
-            text += f" {PersonalityEngine.get_response_enhancement('emoji')}"
+            # Choose appropriate emotion category based on intent
+            intent = self.personality.detect_intent(seed)
+            if intent in ['greeting', 'thanks']:
+                emotion_type = 'positive'
+            elif intent in ['opinion', 'help']:
+                emotion_type = 'thoughtful'
+            else:
+                emotion_type = 'neutral'
+            emoji = random.choice(self.personality.EMOTIONS[emotion_type])
+            text += f" {emoji}"
             
         # If the response is too short, prepend a natural filler
         if len(text.split()) < 4:
             text = f"{random.choice(['Hmm... ', 'Well... '])}{text}"
         
-        # If the response is still too short or lacks meaningful content, use a fallback response
+        # If the response is still too short or lacks meaningful content, use a generic prompt
         if len(text.split()) <= 2:
-            return PersonalityEngine.get_response_enhancement('fallback')
+            generic_prompt = "Could you tell me more about that?"
+            return generic_prompt
         
         return text
 
+# Main Chatbot Class
 class Chatbot:
     """Main chatbot class with enhanced interaction capabilities"""
     
     def __init__(self, config: ChatbotConfig = None):
         self.config = config or ChatbotConfig()
-        self.model = NGramModel(self.config)
-        
+        self.personality = PersonalityEngine()  # Instantiate PersonalityEngine
+        self.model = NGramModel(self.config, self.personality)  # Pass the instance
+    
     async def setup(self):
         """Set up chatbot with enhanced initialization"""
         if not os.path.exists(self.config.training_file):
@@ -496,10 +644,10 @@ class Chatbot:
             results = await asyncio.gather(*tasks)
             
             with open(self.config.training_file, 'w', encoding='utf-8') as f:
-                for content in results:
+                for book_id, content in zip(book_ids, results):
                     if content:
                         f.write(content + "\n\n")
-                        print(f"Book downloaded and added to training data.")
+                        print(f"Book {book_id} downloaded and added to training data.")
                     else:
                         print(f"Failed to download book ID {book_id}.")
     
@@ -510,18 +658,27 @@ class Chatbot:
         while True:
             user_input = input("You: ").strip()
             if user_input.lower() == 'exit':
-                farewell = f"{PersonalityEngine.get_response_enhancement('farewell')} {PersonalityEngine.get_response_enhancement('emoji')}"
-                self._animate_typing(farewell)
+                farewell_response = self.personality.get_intent_response('farewell') or "Goodbye!"
+                emotion_type = 'neutral'
+                # Choose appropriate emotion based on farewell intent
+                emoji = random.choice(self.personality.EMOTIONS[emotion_type])
+                farewell_message = f"{farewell_response} {emoji}"
+                self._animate_typing(farewell_message)
                 break
             
-            # Generate and display response
-            response = self.model.generate_response(
-                seed=user_input, 
-                n=self.config.n, 
-                temperature=random.uniform(0.6, 0.9),
-                max_words=random.randint(15, self.config.max_words),
-                max_repeats=self.config.max_repeats
-            )
+            # Detect intent
+            intent = self.personality.detect_intent(user_input)
+            if intent != 'default':
+                response = self.personality.get_intent_response(intent) or "I'm not sure how to respond to that."
+            else:
+                # Generate response via n-gram model for default intent
+                response = self.model.generate_response(
+                    seed=user_input, 
+                    n=self.config.n, 
+                    temperature=random.uniform(0.6, 0.9),
+                    max_words=random.randint(15, self.config.max_words),
+                    max_repeats=self.config.max_repeats
+                )
             self._animate_typing(response, prefix="Chatbot: ")
     
     def _animate_typing(self, text: str, prefix: str = "", typing_speed: tuple = (0.02, 0.05)):
@@ -542,13 +699,14 @@ class Chatbot:
             print(char, end='', flush=True)
         print()
 
+# Entry Point
 async def main():
     """Enhanced main function with async support"""
     try:
         # Initialize chatbot with custom configuration
         config = ChatbotConfig(
             n=5,  # Use 5-grams for better context
-            vocab_size=25000,  # Increased vocabulary size
+            vocab_size=50000,  # Increased vocabulary size to reduce <unk> occurrences
             max_words=30,  # Allow longer responses
             temperature=0.75,  # Balanced creativity
             max_repeats=2,  # Prevent repetition
@@ -598,7 +756,6 @@ async def main():
         # Clean up resources
         if 'chatbot' in locals() and chatbot.model.conn:
             chatbot.model.conn.close()
-
 
 if __name__ == "__main__":
     # Run the async main function
